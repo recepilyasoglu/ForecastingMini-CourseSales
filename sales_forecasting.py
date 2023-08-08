@@ -1,6 +1,7 @@
-import time
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use("Qt5Agg")
 from matplotlib import pyplot as plt
 import seaborn as sns
 import lightgbm as lgb
@@ -145,6 +146,7 @@ df = pd.get_dummies(df, columns=['store', 'product', 'day_of_week', 'month'])
 
 get_stats(df)
 
+
 # Converting sales to log(1+sales)
 # logarithm operation, 1 because 0 cannot be logged, used to avoid some errors like this
 
@@ -153,7 +155,137 @@ df['num_sold'] = np.log1p(df["num_sold"].values)
 get_stats(df)
 
 
+# Model
+# Custom Cost Functions
+def smape(preds, target, epsilon=1e-10):
+    masked_arr = ~((preds == 0) & (target == 0))
+    preds, target = preds[masked_arr], target[masked_arr]
+    num = np.abs(preds - target)
+    denom = np.abs(preds) + np.abs(target)
+
+    # Filter small values to avoid division by zero
+    small_val_mask = denom < epsilon
+    denom[small_val_mask] = epsilon
+
+    smape_val = 200 * np.mean(num / denom)
+    return smape_val
 
 
+def lgbm_smape(preds, train_data):
+    labels = train_data.get_label()  # LigtGBM veri yapısının içerisinde olan bağımlı değişkeni ifade ediyor
+    smape_val = smape(np.expm1(preds), np.expm1(labels))
+    return 'SMAPE', smape_val, False
 
 
+# Time-Based Validation Sets
+
+df["date"].min(), df["date"].max()
+
+# Train set until the beginning of 2017 (until the end of 2016).
+train = df.loc[(df["date"] < "2021-01-01"), :]
+
+# First 3 months of 2021 validation set.
+val = df.loc[(df["date"] >= "2021-01-01") & (df["date"] < "2021-12-31"), :]  # yıl bizim için ilgili özellikleri taşımıyor diye düşünüyoruz(örn: corona)
+
+cols = [col for col in train.columns if col not in ['date', 'id', "num_sold", "year", "country"]]
+
+Y_train = train['num_sold']
+X_train = train[cols]
+
+Y_val = val['num_sold']
+X_val = val[cols]
+
+Y_train.shape, X_train.shape, Y_val.shape, X_val.shape
+
+
+# checking missing values
+Y_train.isnull().any(), Y_val.isnull().any()
+
+
+# Time Series Model With LightGBM
+# LightGBM parameters
+lgb_params = {'num_leaves': 10,
+              'learning_rate': 0.02,
+              'feature_fraction': 0.8,
+              'max_depth': 5,
+              'verbosity': 0,
+              'num_boost_round': 10000,
+              'early_stopping_rounds': 200,
+              'nthread': -1}
+
+lgbtrain = lgb.Dataset(data=X_train, label=Y_train, feature_name=cols)
+
+lgbval = lgb.Dataset(data=X_val, label=Y_val, reference=lgbtrain, feature_name=cols)
+
+model = lgb.train(params=lgb_params,
+                  train_set=lgbtrain,
+                  valid_sets=[lgbtrain, lgbval],
+                  num_boost_round=lgb_params['num_boost_round'],
+                  early_stopping_rounds=lgb_params['early_stopping_rounds'],
+                  feval=lgbm_smape,
+                  verbose_eval=100)
+
+# asking the data of the first 3 months of 2021 in the validation set
+y_pred_val = model.predict(X_val, num_iteration=model.best_iteration)
+
+smape(np.expm1(y_pred_val), np.expm1(Y_val))
+
+
+# Variable Importance Levels
+def plot_lgb_importances(model, plot=False, num=10):
+    gain = model.feature_importance('gain')
+    feat_imp = pd.DataFrame({'feature': model.feature_name(),
+                             'split': model.feature_importance('split'),
+                             'gain': 100 * gain / gain.sum()}).sort_values('gain', ascending=False)
+    if plot:
+        plt.figure(figsize=(10, 10))
+        sns.set(font_scale=1)
+        sns.barplot(x="gain", y="feature", data=feat_imp[0:25])
+        plt.title('feature')
+        plt.tight_layout()
+        plt.show()
+    else:
+        print(feat_imp.head(num))
+    return feat_imp
+
+plot_lgb_importances(model, num=200)
+
+plot_lgb_importances(model, num=30, plot=True)
+
+
+# Final Modelling
+
+train = df.loc[~df.num_sold.isna()]
+Y_train = train['num_sold']
+X_train = train[cols]
+
+
+test = df.loc[df.num_sold.isna()]
+X_test = test[cols]
+
+lgb_params = {'num_leaves': 10,
+              'learning_rate': 0.02,
+              'feature_fraction': 0.8,
+              'max_depth': 5,
+              'verbose': 0,
+              'nthread': -1,
+              "num_boost_round": model.best_iteration}
+
+lgbtrain_all = lgb.Dataset(data=X_train, label=Y_train, feature_name=cols)
+
+final_model = lgb.train(lgb_params, lgbtrain_all, num_boost_round=model.best_iteration)
+
+test_preds = final_model.predict(X_test, num_iteration=model.best_iteration)
+
+
+sub_ex = pd.read_csv("datasets/sample_submission.csv")
+
+submission_df = test.loc[:, ["id", "num_sold"]]
+
+# kendi tahmin ettiğimiz değerler logaritması alınmış değerlerdi
+# tersini alarak tahmin ettiğimiz değerleri yerleştiriyoruz
+submission_df['num_sold'] = np.expm1(test_preds)
+
+submission_df['id'] = submission_df.id.astype(int)
+
+submission_df.to_csv("submission_mini-course.csv", index=False)
