@@ -178,3 +178,29 @@ def lgbm_smape(preds, train_data):
     return 'SMAPE', smape_val, False
 
 
+# Time-Based Validation Sets
+
+df["date"].min(), df["date"].max()
+
+# Train set until the beginning of 2017 (until the end of 2016).
+train = df.loc[(df["date"] < "2021-01-01"), :]
+
+# First 3 months of 2021 validation set.
+val = df.loc[(df["date"] >= "2021-01-01") & (df["date"] < "2021-12-31"), :]  # yıl bizim için ilgili özellikleri taşımıyor diye düşünüyoruz(örn: corona)
+
+cols = [col for col in train.columns if col not in ['date', 'id', "num_sold", "year", "country"]]
+
+Y_train = train['num_sold']
+X_train = train[cols]
+
+Y_val = val['num_sold']
+X_val = val[cols]
+
+Y_train.shape, X_train.shape, Y_val.shape, X_val.shape
+
+
+# checking missing values
+Y_train.isnull().any(), Y_val.isnull().any()
+
+
+
