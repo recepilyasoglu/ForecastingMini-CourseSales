@@ -255,5 +255,40 @@ plot_lgb_importances(model, num=200)
 plot_lgb_importances(model, num=30, plot=True)
 
 
+# Final Modelling
 
+train = df.loc[~df.num_sold.isna()]
+Y_train = train['num_sold']
+X_train = train[cols]
+
+
+test = df.loc[df.num_sold.isna()]
+X_test = test[cols]
+
+lgb_params = {'num_leaves': 10,
+              'learning_rate': 0.02,
+              'feature_fraction': 0.8,
+              'max_depth': 5,
+              'verbose': 0,
+              'nthread': -1,
+              "num_boost_round": model.best_iteration}
+
+lgbtrain_all = lgb.Dataset(data=X_train, label=Y_train, feature_name=cols)
+
+final_model = lgb.train(lgb_params, lgbtrain_all, num_boost_round=model.best_iteration)
+
+test_preds = final_model.predict(X_test, num_iteration=model.best_iteration)
+
+
+sub_ex = pd.read_csv("datasets/sample_submission.csv")
+
+submission_df = test.loc[:, ["id", "num_sold"]]
+
+# kendi tahmin ettiğimiz değerler logaritması alınmış değerlerdi
+# tersini alarak tahmin ettiğimiz değerleri yerleştiriyoruz
+submission_df['num_sold'] = np.expm1(test_preds)
+
+submission_df['id'] = submission_df.id.astype(int)
+
+submission_df.to_csv("submission_mini-course.csv", index=False)
 
