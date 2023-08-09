@@ -203,4 +203,35 @@ Y_train.shape, X_train.shape, Y_val.shape, X_val.shape
 Y_train.isnull().any(), Y_val.isnull().any()
 
 
+# Time Series Model With LightGBM
+
+# LightGBM parameters
+lgb_params = {'num_leaves': 10,
+              'learning_rate': 0.06,
+              'feature_fraction': 1.0,
+              'max_depth': 5,
+              'verbosity': 0,
+              'num_boost_round': 20000,
+              'early_stopping_rounds': 200,
+              'nthread': -1}
+
+lgbtrain = lgb.Dataset(data=X_train, label=Y_train, feature_name=cols)
+
+lgbval = lgb.Dataset(data=X_val, label=Y_val, reference=lgbtrain, feature_name=cols)
+
+model = lgb.train(params=lgb_params,
+                  train_set=lgbtrain,
+                  valid_sets=[lgbtrain, lgbval],
+                  num_boost_round=lgb_params['num_boost_round'],
+                  early_stopping_rounds=lgb_params['early_stopping_rounds'],
+                  feval=lgbm_smape,
+                  verbose_eval=100)
+
+# asking the data of the first 3 months of 2021 in the validation set
+y_pred_val = model.predict(X_val, num_iteration=model.best_iteration)
+
+smape(np.expm1(y_pred_val), np.expm1(Y_val))
+
+
+
 
