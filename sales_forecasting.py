@@ -155,3 +155,26 @@ df['num_sold'] = np.log1p(df["num_sold"].values)
 get_stats(df)
 
 
+# Modelling
+
+# Custom Cost Functions
+def smape(preds, target, epsilon=1e-10):
+    masked_arr = ~((preds == 0) & (target == 0))
+    preds, target = preds[masked_arr], target[masked_arr]
+    num = np.abs(preds - target)
+    denom = np.abs(preds) + np.abs(target)
+
+    # Filter small values to avoid division by zero
+    small_val_mask = denom < epsilon
+    denom[small_val_mask] = epsilon
+
+    smape_val = 200 * np.mean(num / denom)
+    return smape_val
+
+
+def lgbm_smape(preds, train_data):
+    labels = train_data.get_label()  # LigtGBM veri yapısının içerisinde olan bağımlı değişkeni ifade ediyor
+    smape_val = smape(np.expm1(preds), np.expm1(labels))
+    return 'SMAPE', smape_val, False
+
+
