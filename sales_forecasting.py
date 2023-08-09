@@ -233,5 +233,27 @@ y_pred_val = model.predict(X_val, num_iteration=model.best_iteration)
 smape(np.expm1(y_pred_val), np.expm1(Y_val))
 
 
+# Variable Importance Levels
+def plot_lgb_importances(model, plot=False, num=10):
+    gain = model.feature_importance('gain')
+    feat_imp = pd.DataFrame({'feature': model.feature_name(),
+                             'split': model.feature_importance('split'),
+                             'gain': 100 * gain / gain.sum()}).sort_values('gain', ascending=False)
+    if plot:
+        plt.figure(figsize=(10, 10))
+        sns.set(font_scale=1)
+        sns.barplot(x="gain", y="feature", data=feat_imp[0:25])
+        plt.title('feature')
+        plt.tight_layout()
+        plt.show()
+    else:
+        print(feat_imp.head(num))
+    return feat_imp
+
+plot_lgb_importances(model, num=200)
+
+plot_lgb_importances(model, num=30, plot=True)
+
+
 
 
